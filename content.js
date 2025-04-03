@@ -1,39 +1,58 @@
-// Listen for messages from the popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'tagPost') {
-        try {
-            // Find the main post content
-            const post = document.querySelector('[role="article"]');
+// Function to extract xt parameter from attributionsrc
+function extractXtParameter(attributionsrc) {
+    const match = attributionsrc.match(/xt=([^&]+)/);
+    return match ? match[1] : null;
+}
 
-            if (!post) {
-                sendResponse({ success: false, error: 'No post found' });
-                return;
-            }
+// Function to create stance popup
+function createStancePopup() {
+    const popup = document.createElement('div');
+    popup.className = 'fb-stance-popup';
+    popup.innerHTML = `
+    <div class="fb-stance-popup-title">Select Stance</div>
+    <div class="fb-stance-options">
+      <button class="fb-stance-button support" data-stance="support">Support</button>
+      <button class="fb-stance-button oppose" data-stance="oppose">Oppose</button>
+      <button class="fb-stance-button neutral" data-stance="neutral">Neutral</button>
+    </div>
+  `;
+    return popup;
+}
 
-            // Create and add the stance tag
-            const tag = document.createElement('div');
-            tag.className = 'stance-tag';
-            tag.style.cssText = `
-        background-color: ${getStanceColor(request.stance)};
-        color: white;
-        padding: 4px 8px;
-        border-radius: 4px;
-        margin: 8px 0;
-        display: inline-block;
-        font-weight: bold;
-      `;
-            tag.textContent = `Stance: ${request.stance}`;
+// Function to position popup next to a post
+function positionPopup(popup, post) {
+    const rect = post.getBoundingClientRect();
+    popup.style.top = `${window.scrollY + rect.top}px`;
+    popup.style.left = `${rect.right + 10}px`;
+}
 
-            // Insert the tag after the post content
-            post.appendChild(tag);
-
-            sendResponse({ success: true });
-        } catch (error) {
-            sendResponse({ success: false, error: error.message });
-        }
+// Function to add stance tag to post
+function addStanceTag(post, stance, postId) {
+    const existingTag = post.querySelector('.fb-stance-tag');
+    if (existingTag) {
+        existingTag.remove();
     }
-    return true; // Required for async response
-});
+
+    const tag = document.createElement('div');
+    tag.className = 'fb-stance-tag';
+    tag.style.backgroundColor = getStanceColor(stance);
+    tag.textContent = `Stance: ${stance}`;
+    tag.setAttribute('data-post-id', postId);
+
+    // Make sure post has position relative for absolute positioning
+    if (window.getComputedStyle(post).position === 'static') {
+        post.style.position = 'relative';
+    }
+    post.appendChild(tag);
+
+    // Store the stance in Chrome storage
+    chrome.storage.local.set({
+        [postId]: {
+            stance: stance,
+            timestamp: Date.now()
+        }
+    });
+}
 
 function getStanceColor(stance) {
     const colors = {
@@ -42,4 +61,98 @@ function getStanceColor(stance) {
         neutral: '#9E9E9E'
     };
     return colors[stance] || '#9E9E9E';
-} 
+}
+
+// Main function to handle post detection and popup creation
+function handlePosts() {
+    // Find all elements with attributionsrc attribute
+    const posts = document.querySelectorAll('[attributionsrc*="/privacy_sandbox/comet/register/source/"]');
+
+    posts.forEach(post => {
+        const attributionsrc = post.getAttribute('attributionsrc');
+        const postId = extractXtParameter(attributionsrc);
+
+        if (!postId) return;
+
+        // Skip if already processed
+        if (post.hasAttribute('data-stance-processed')) {
+            return;
+        }
+
+        // Mark as processed
+        post.setAttribute('data-stance-processed', 'true');
+        post.setAttribute('data-post-id', postId);
+
+        // Make sure post has position relative for absolute positioning
+        if (window.getComputedStyle(post).position === 'static') {
+            post.style.position = 'relative';
+        }
+
+        // Create "Add Stance" button
+        const addButton = document.createElement('button');
+        addButton.textContent = '+ Add Stance';
+        addButton.className = 'fb-stance-add-button';
+
+        // Add button to post
+        post.appendChild(addButton);
+
+        // Check if there's a stored stance for this post
+        chrome.storage.local.get(postId, (result) => {
+            if (result[postId]) {
+                addStanceTag(post, result[postId].stance, postId);
+            }
+        });
+
+        // Handle button click
+        addButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Remove any existing popups
+            const existingPopup = document.querySelector('.fb-stance-popup');
+            if (existingPopup) {
+                existingPopup.remove();
+            }
+
+            // Create and position new popup
+            const popup = createStancePopup();
+            document.body.appendChild(popup);
+            positionPopup(popup, post);
+
+            // Handle stance selection
+            popup.addEventListener('click', (e) => {
+                if (e.target.classList.contains('fb-stance-button')) {
+                    const stance = e.target.dataset.stance;
+                    addStanceTag(post, stance, postId);
+                    popup.remove();
+                }
+            });
+
+            // Close popup when clicking outside
+            document.addEventListener('click', function closePopup(e) {
+                if (!popup.contains(e.target) && e.target !== addButton) {
+                    popup.remove();
+                    document.removeEventListener('click', closePopup);
+                }
+            });
+        });
+    });
+}
+
+// Initial posts check
+handlePosts();
+
+// Watch for new posts being added (Facebook's infinite scroll)
+const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+        if (mutation.addedNodes.length) {
+            handlePosts();
+        }
+    });
+});
+
+// Start observing the document for added nodes
+observer.observe(document.body, {
+    childList: true,
+    subtree: true
+}); 
