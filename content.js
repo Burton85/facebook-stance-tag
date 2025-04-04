@@ -78,10 +78,12 @@ class StanceSelector {
 
     static async showPopup(post, postId, existingTag = null) {
         const existingPopup = document.querySelector('.fb-stance-popup');
-        if (existingPopup) existingPopup.remove();
-
-        if (existingTag) {
-            existingTag.style.display = 'none';
+        if (existingPopup) {
+            existingPopup.remove();
+            // Show the tag back if it exists when removing old popup
+            if (existingTag) {
+                existingTag.style.display = '';
+            }
         }
 
         const stats = await StanceManager.getStats(postId);
@@ -90,10 +92,11 @@ class StanceSelector {
         this.positionPopup(popup, post);
 
         popup.addEventListener('mouseleave', () => {
-            const tag = post.querySelector('.fb-stance-tag');
-            if (!tag?.matches(':hover')) {
+            const addButton = post.querySelector('.fb-stance-add-button');
+            // Only remove popup and show tag if mouse isn't over the button
+            if (!addButton?.matches(':hover')) {
                 popup.remove();
-                if (existingTag && existingTag.style.display === 'none') {
+                if (existingTag) {
                     existingTag.style.display = '';
                 }
             }
@@ -123,10 +126,12 @@ class StanceSelector {
             }
         });
 
+        // Handle clicking outside popup
         document.addEventListener('click', function closePopup(e) {
-            if (!popup.contains(e.target) && e.target !== existingTag) {
+            const addButton = post.querySelector('.fb-stance-add-button');
+            if (!popup.contains(e.target) && !addButton.contains(e.target)) {
                 popup.remove();
-                if (existingTag && existingTag.style.display === 'none') {
+                if (existingTag) {
                     existingTag.style.display = '';
                 }
                 document.removeEventListener('click', closePopup);
@@ -213,12 +218,16 @@ class Post {
         addButton.className = 'fb-stance-add-button';
         this.element.appendChild(addButton);
 
-        // Add hover event listeners
         let hoverTimeout;
 
         addButton.addEventListener('mouseenter', () => {
+            const existingTag = this.element.querySelector('.fb-stance-tag');
+            if (existingTag) {
+                existingTag.style.display = 'none';
+            }
+
             hoverTimeout = setTimeout(() => {
-                StanceSelector.showPopup(this.element, this.postId, null);
+                StanceSelector.showPopup(this.element, this.postId, existingTag);
             }, 200);
         });
 
@@ -226,12 +235,22 @@ class Post {
             if (hoverTimeout) {
                 clearTimeout(hoverTimeout);
             }
+
+            // Give time to move to popup before showing tag
+            setTimeout(() => {
+                const popup = document.querySelector('.fb-stance-popup');
+                const existingTag = this.element.querySelector('.fb-stance-tag');
+                if (!popup?.matches(':hover') && existingTag) {
+                    existingTag.style.display = '';
+                }
+            }, 100);
         });
 
         addButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-            StanceSelector.showPopup(this.element, this.postId, null);
+            const existingTag = this.element.querySelector('.fb-stance-tag');
+            StanceSelector.showPopup(this.element, this.postId, existingTag);
         });
     }
 
