@@ -26,6 +26,37 @@ class Post {
         addButton.className = 'fb-stance-add-button';
         this.element.appendChild(addButton);
 
+        // Add hover event listeners
+        let hoverTimeout;
+
+        addButton.addEventListener('mouseenter', async () => {
+            const existingTag = this.element.querySelector('.fb-stance-tag');
+            // Small delay to prevent accidental triggers
+            hoverTimeout = setTimeout(() => {
+                StanceSelector.showPopup(this.element, this.postId, existingTag);
+            }, 200);
+        });
+
+        addButton.addEventListener('mouseleave', () => {
+            // Clear timeout if mouse leaves before popup shows
+            if (hoverTimeout) {
+                clearTimeout(hoverTimeout);
+            }
+
+            // Give some time to move mouse to popup before closing
+            setTimeout(() => {
+                const popup = document.querySelector('.fb-stance-popup');
+                if (popup && !popup.matches(':hover')) {
+                    popup.remove();
+                    const existingTag = this.element.querySelector('.fb-stance-tag');
+                    if (existingTag && existingTag.style.display === 'none') {
+                        existingTag.style.display = '';
+                    }
+                }
+            }, 300);
+        });
+
+        // Keep original click handler as fallback
         addButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -57,6 +88,22 @@ class Post {
         tag.setAttribute('data-post-id', this.postId);
         tag.setAttribute('data-stance', stance);
 
+        // Add hover event listeners
+        let hoverTimeout;
+
+        tag.addEventListener('mouseenter', () => {
+            hoverTimeout = setTimeout(() => {
+                StanceSelector.showPopup(this.element, this.postId, tag);
+            }, 200);
+        });
+
+        tag.addEventListener('mouseleave', () => {
+            if (hoverTimeout) {
+                clearTimeout(hoverTimeout);
+            }
+        });
+
+        // Keep click handler for accessibility
         tag.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -128,6 +175,17 @@ class StanceSelector {
         const popup = this.createPopup(stats);
         document.body.appendChild(popup);
         this.positionPopup(popup, post);
+
+        // Add mouseleave event to popup
+        popup.addEventListener('mouseleave', () => {
+            const tag = post.querySelector('.fb-stance-tag');
+            if (!tag?.matches(':hover')) {
+                popup.remove();
+                if (existingTag && existingTag.style.display === 'none') {
+                    existingTag.style.display = '';
+                }
+            }
+        });
 
         this.setupPopupEventListeners(popup, post, postId, existingTag);
     }
