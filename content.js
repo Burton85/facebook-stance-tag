@@ -15,11 +15,12 @@ function createStancePopup() {
     const popup = document.createElement('div');
     popup.className = 'fb-stance-popup';
     popup.innerHTML = `
-    <div class="fb-stance-popup-title">Select Stance</div>
+    <div class="fb-stance-popup-title">選擇立場</div>
     <div class="fb-stance-options">
-      <button class="fb-stance-button support" data-stance="support">Support</button>
-      <button class="fb-stance-button oppose" data-stance="oppose">Oppose</button>
-      <button class="fb-stance-button neutral" data-stance="neutral">Neutral</button>
+      <button class="fb-stance-button left" data-stance="left">左派</button>
+      <button class="fb-stance-button right" data-stance="right">右派</button>
+      <button class="fb-stance-button neutral" data-stance="neutral">中立</button>
+      <button class="fb-stance-button antiwar" data-stance="antiwar">反戰</button>
     </div>
   `;
     return popup;
@@ -42,7 +43,7 @@ function addStanceTag(post, stance, cftParam) {
     const tag = document.createElement('div');
     tag.className = 'fb-stance-tag';
     tag.style.backgroundColor = getStanceColor(stance);
-    tag.textContent = `Stance: ${stance}`;
+    tag.textContent = getStanceText(stance);
     tag.setAttribute('data-cft', cftParam);
 
     // Make sure post has position relative for absolute positioning
@@ -62,11 +63,22 @@ function addStanceTag(post, stance, cftParam) {
 
 function getStanceColor(stance) {
     const colors = {
-        support: '#4CAF50',
-        oppose: '#F44336',
-        neutral: '#9E9E9E'
+        left: '#FF6B6B',    // Coral Red
+        right: '#4ECDC4',   // Turquoise
+        neutral: '#95A5A6',  // Gray
+        antiwar: '#9B59B6'   // Purple
     };
-    return colors[stance] || '#9E9E9E';
+    return colors[stance] || '#95A5A6';
+}
+
+function getStanceText(stance) {
+    const texts = {
+        left: '左派',
+        right: '右派',
+        neutral: '中立',
+        antiwar: '反戰'
+    };
+    return texts[stance] || stance;
 }
 
 // Main function to handle post detection and popup creation
@@ -102,9 +114,9 @@ function handlePosts() {
             post.style.position = 'relative';
         }
 
-        // Create "Add Stance" button
+        // Create "T" button
         const addButton = document.createElement('button');
-        addButton.textContent = '+ Add Stance';
+        addButton.textContent = 'T';
         addButton.className = 'fb-stance-add-button';
 
         // Add button to post
