@@ -1,15 +1,3 @@
-// Function to extract cft parameter from href
-function extractCftParameter(href) {
-    try {
-        const url = new URL(href);
-        const cftParam = url.searchParams.get('__cft__[0]');
-        return cftParam || null;
-    } catch (error) {
-        console.log('Error extracting cft parameter:', error);
-        return null;
-    }
-}
-
 // Function to create stance popup
 function createStancePopup(stats) {
     const popup = document.createElement('div');
@@ -46,10 +34,15 @@ function positionPopup(popup, post) {
 }
 
 // Function to update stance statistics
-function updateStanceStats(cftParam, stance, oldStance = null) {
+function updateStanceStats(postId, stance, oldStance = null) {
+    console.log(`Updating stance for post "${postId}":`, {
+        newStance: stance,
+        oldStance: oldStance || 'none'
+    });
+
     chrome.storage.local.get('stanceStats', (result) => {
         const stats = result.stanceStats || {};
-        const postStats = stats[cftParam] || {
+        const postStats = stats[postId] || {
             left: 0,
             right: 0,
             neutral: 0,
@@ -57,36 +50,44 @@ function updateStanceStats(cftParam, stance, oldStance = null) {
             total: 0
         };
 
+        console.log('Previous stats for post:', postStats);
+
         // If there was a previous stance, decrease its count
         if (oldStance) {
             postStats[oldStance] = Math.max(0, (postStats[oldStance] || 0) - 1);
             postStats.total = Math.max(0, postStats.total - 1);
+            console.log(`Decreased count for ${oldStance} stance`);
         }
 
         // Increment the new stance count
         postStats[stance] = (postStats[stance] || 0) + 1;
         postStats.total = (postStats.total || 0) + 1;
+        console.log(`Increased count for ${stance} stance`);
 
         // Update stats in storage
-        stats[cftParam] = postStats;
+        stats[postId] = postStats;
         chrome.storage.local.set({ stanceStats: stats }, () => {
-            console.log('Updated stance stats:', postStats);
+            console.log('Updated stance stats for post:', {
+                postId: postId,
+                newStats: postStats,
+                totalPosts: Object.keys(stats).length
+            });
         });
     });
 }
 
 // Function to get stance statistics for a post
-function getStanceStats(cftParam) {
+function getStanceStats(postId) {
     return new Promise((resolve) => {
         chrome.storage.local.get('stanceStats', (result) => {
             const stats = result.stanceStats || {};
-            resolve(stats[cftParam] || null);
+            resolve(stats[postId] || null);
         });
     });
 }
 
 // Function to show stance selection popup
-async function showStancePopup(post, cftParam, existingTag = null) {
+async function showStancePopup(post, postId, existingTag = null) {
     // Remove any existing popups
     const existingPopup = document.querySelector('.fb-stance-popup');
     if (existingPopup) {
@@ -99,7 +100,7 @@ async function showStancePopup(post, cftParam, existingTag = null) {
     }
 
     // Get stance statistics before creating popup
-    const stats = await getStanceStats(cftParam);
+    const stats = await getStanceStats(postId);
 
     // Create and position new popup
     const popup = createStancePopup(stats);
@@ -116,7 +117,7 @@ async function showStancePopup(post, cftParam, existingTag = null) {
             if (existingTag) {
                 existingTag.remove();
             }
-            addStanceTag(post, stance, cftParam);
+            addStanceTag(post, stance, postId);
             popup.remove();
         }
     });
@@ -145,11 +146,23 @@ async function showStancePopup(post, cftParam, existingTag = null) {
 }
 
 // Function to add stance tag to post
-async function addStanceTag(post, stance, cftParam) {
+async function addStanceTag(post, stance, postId) {
+    console.log(`Adding/Updating stance tag for post "${postId}"`);
+
     const existingTag = post.querySelector('.fb-stance-tag');
     const oldStance = existingTag ? existingTag.getAttribute('data-stance') : null;
 
+    console.log('Stance change:', {
+        postId: postId,
+        from: oldStance || 'none',
+        to: stance
+    });
+
     if (existingTag) {
+        console.log('Removing existing tag:', {
+            oldStance: oldStance,
+            element: existingTag
+        });
         existingTag.remove();
     }
 
@@ -157,14 +170,18 @@ async function addStanceTag(post, stance, cftParam) {
     tag.className = 'fb-stance-tag';
     tag.style.backgroundColor = getStanceColor(stance);
     tag.textContent = getStanceText(stance);
-    tag.setAttribute('data-cft', cftParam);
+    tag.setAttribute('data-post-id', postId);
     tag.setAttribute('data-stance', stance);
 
     // Add click handler for re-selection
     tag.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        showStancePopup(post, cftParam, tag);
+        console.log('Stance tag clicked for re-selection:', {
+            postId: postId,
+            currentStance: stance
+        });
+        showStancePopup(post, postId, tag);
     });
 
     // Prevent event propagation
@@ -183,16 +200,27 @@ async function addStanceTag(post, stance, cftParam) {
         post.style.position = 'relative';
     }
     post.appendChild(tag);
+    console.log('New stance tag added:', {
+        postId: postId,
+        stance: stance,
+        element: tag
+    });
 
     // Update stance statistics
-    updateStanceStats(cftParam, stance, oldStance);
+    updateStanceStats(postId, stance, oldStance);
 
     // Store the stance in Chrome storage
     chrome.storage.local.set({
-        [cftParam]: {
+        [postId]: {
             stance: stance,
             timestamp: Date.now()
         }
+    }, () => {
+        console.log('Stance stored in Chrome storage:', {
+            postId: postId,
+            stance: stance,
+            timestamp: Date.now()
+        });
     });
 }
 
@@ -216,33 +244,43 @@ function getStanceText(stance) {
     return texts[stance] || stance;
 }
 
-// Main function to handle post detection and popup creation
+// Function to handle posts
 function handlePosts() {
     console.log('Scanning for Facebook posts...');
 
-    // Find all links with __cft__ parameter
-    const links = document.querySelectorAll('a[href*="__cft__"]');
+    // Find all links with aria-label and attributionsrc, but without target="_self"
+    const links = document.querySelectorAll('a[aria-label][attributionsrc^="/privacy_sandbox/comet/register/source/"]:not([target="_self"])');
     console.log('Found links:', links.length);
 
     // Process each link
     links.forEach(link => {
+        // Get the aria-label value as post identifier
+        const postId = link.getAttribute('aria-label');
+        if (!postId) return;
+
+        // Log all relevant attributes for debugging
+        console.log('Link attributes:', {
+            postId: postId,
+            attributionSrc: link.getAttribute('attributionsrc'),
+            target: link.getAttribute('target'),
+            hasTargetSelf: link.getAttribute('target') === '_self'
+        });
+
         // Find the closest article container
         const post = link;
         if (!post) return;
 
-        const cftParam = extractCftParameter(link.href);
-        if (!cftParam) return;
-
-        console.log('Found post with cft:', cftParam);
+        console.log('Found post with id:', postId);
 
         // Skip if already processed
         if (post.hasAttribute('data-stance-processed')) {
             return;
         }
 
-        // Mark as processed and store cft parameter
+        // Mark as processed and store post id and attribution source
         post.setAttribute('data-stance-processed', 'true');
-        post.setAttribute('data-cft', cftParam);
+        post.setAttribute('data-post-id', postId);
+        post.setAttribute('data-attribution-src', link.getAttribute('attributionsrc'));
 
         // Make sure post has position relative for absolute positioning
         if (window.getComputedStyle(post).position === 'static') {
@@ -258,9 +296,9 @@ function handlePosts() {
         post.appendChild(addButton);
 
         // Check if there's a stored stance for this post
-        chrome.storage.local.get(cftParam, (result) => {
-            if (result[cftParam]) {
-                addStanceTag(post, result[cftParam].stance, cftParam);
+        chrome.storage.local.get(postId, (result) => {
+            if (result[postId]) {
+                addStanceTag(post, result[postId].stance, postId);
             }
         });
 
@@ -269,7 +307,7 @@ function handlePosts() {
             e.preventDefault();
             e.stopPropagation();
             const existingTag = post.querySelector('.fb-stance-tag');
-            showStancePopup(post, cftParam, existingTag);
+            showStancePopup(post, postId, existingTag);
         });
     });
 }
