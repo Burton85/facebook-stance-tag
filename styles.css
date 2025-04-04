@@ -57,6 +57,38 @@ label {
     text-align: center;
 }
 
+.fb-stance-stats {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 10px;
+    padding: 5px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 4px;
+}
+
+.fb-stance-stats .stat-item {
+    font-size: 12px;
+    padding: 2px 4px;
+    border-radius: 3px;
+    color: white;
+}
+
+.fb-stance-stats .stat-item.left {
+    background-color: rgba(255, 107, 107, 0.7);
+}
+
+.fb-stance-stats .stat-item.right {
+    background-color: rgba(78, 205, 196, 0.7);
+}
+
+.fb-stance-stats .stat-item.neutral {
+    background-color: rgba(149, 165, 166, 0.7);
+}
+
+.fb-stance-stats .stat-item.antiwar {
+    background-color: rgba(155, 89, 182, 0.7);
+}
+
 .fb-stance-options {
     display: flex;
     flex-direction: column;

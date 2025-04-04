@@ -11,11 +11,23 @@ function extractCftParameter(href) {
 }
 
 // Function to create stance popup
-function createStancePopup() {
+function createStancePopup(stats) {
     const popup = document.createElement('div');
     popup.className = 'fb-stance-popup';
+
+    // Create stats display HTML
+    const statsHtml = stats ? `
+        <div class="fb-stance-stats">
+            <div class="stat-item left">${stats.left || 0} 左</div>
+            <div class="stat-item right">${stats.right || 0} 右</div>
+            <div class="stat-item neutral">${stats.neutral || 0} 中</div>
+            <div class="stat-item antiwar">${stats.antiwar || 0} 反</div>
+        </div>
+    ` : '';
+
     popup.innerHTML = `
     <div class="fb-stance-popup-title">選擇立場</div>
+    ${statsHtml}
     <div class="fb-stance-options">
       <button class="fb-stance-button left" data-stance="left">左派</button>
       <button class="fb-stance-button right" data-stance="right">右派</button>
@@ -33,9 +45,51 @@ function positionPopup(popup, post) {
     popup.style.left = `${rect.right + 10}px`;
 }
 
+// Function to update stance statistics
+function updateStanceStats(cftParam, stance, oldStance = null) {
+    chrome.storage.local.get('stanceStats', (result) => {
+        const stats = result.stanceStats || {};
+        const postStats = stats[cftParam] || {
+            left: 0,
+            right: 0,
+            neutral: 0,
+            antiwar: 0,
+            total: 0
+        };
+
+        // If there was a previous stance, decrease its count
+        if (oldStance) {
+            postStats[oldStance] = Math.max(0, (postStats[oldStance] || 0) - 1);
+            postStats.total = Math.max(0, postStats.total - 1);
+        }
+
+        // Increment the new stance count
+        postStats[stance] = (postStats[stance] || 0) + 1;
+        postStats.total = (postStats.total || 0) + 1;
+
+        // Update stats in storage
+        stats[cftParam] = postStats;
+        chrome.storage.local.set({ stanceStats: stats }, () => {
+            console.log('Updated stance stats:', postStats);
+        });
+    });
+}
+
+// Function to get stance statistics for a post
+function getStanceStats(cftParam) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get('stanceStats', (result) => {
+            const stats = result.stanceStats || {};
+            resolve(stats[cftParam] || null);
+        });
+    });
+}
+
 // Function to add stance tag to post
-function addStanceTag(post, stance, cftParam) {
+async function addStanceTag(post, stance, cftParam) {
     const existingTag = post.querySelector('.fb-stance-tag');
+    const oldStance = existingTag ? existingTag.getAttribute('data-stance') : null;
+
     if (existingTag) {
         existingTag.remove();
     }
@@ -45,12 +99,16 @@ function addStanceTag(post, stance, cftParam) {
     tag.style.backgroundColor = getStanceColor(stance);
     tag.textContent = getStanceText(stance);
     tag.setAttribute('data-cft', cftParam);
+    tag.setAttribute('data-stance', stance);
 
     // Make sure post has position relative for absolute positioning
     if (window.getComputedStyle(post).position === 'static') {
         post.style.position = 'relative';
     }
     post.appendChild(tag);
+
+    // Update stance statistics
+    updateStanceStats(cftParam, stance, oldStance);
 
     // Store the stance in Chrome storage
     chrome.storage.local.set({
@@ -130,7 +188,7 @@ function handlePosts() {
         });
 
         // Handle button click
-        addButton.addEventListener('click', (e) => {
+        addButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
 
@@ -140,8 +198,11 @@ function handlePosts() {
                 existingPopup.remove();
             }
 
+            // Get stance statistics before creating popup
+            const stats = await getStanceStats(cftParam);
+
             // Create and position new popup
-            const popup = createStancePopup();
+            const popup = createStancePopup(stats);
             document.body.appendChild(popup);
             positionPopup(popup, post);
 
