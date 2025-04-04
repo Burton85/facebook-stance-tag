@@ -85,6 +85,65 @@ function getStanceStats(cftParam) {
     });
 }
 
+// Function to show stance selection popup
+async function showStancePopup(post, cftParam, existingTag = null) {
+    // Remove any existing popups
+    const existingPopup = document.querySelector('.fb-stance-popup');
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+
+    // Hide existing tag temporarily
+    if (existingTag) {
+        existingTag.style.display = 'none';
+    }
+
+    // Get stance statistics before creating popup
+    const stats = await getStanceStats(cftParam);
+
+    // Create and position new popup
+    const popup = createStancePopup(stats);
+    document.body.appendChild(popup);
+    positionPopup(popup, post);
+
+    // Handle stance selection
+    popup.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (e.target.classList.contains('fb-stance-button')) {
+            const stance = e.target.dataset.stance;
+            if (existingTag) {
+                existingTag.remove();
+            }
+            addStanceTag(post, stance, cftParam);
+            popup.remove();
+        }
+    });
+
+    // Close popup when clicking outside
+    document.addEventListener('click', function closePopup(e) {
+        if (!popup.contains(e.target) && e.target !== existingTag) {
+            popup.remove();
+            if (existingTag && existingTag.style.display === 'none') {
+                existingTag.style.display = '';
+            }
+            document.removeEventListener('click', closePopup);
+        }
+    }, true);
+
+    // Prevent popup from triggering underlying elements
+    popup.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    popup.addEventListener('mouseup', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+}
+
 // Function to add stance tag to post
 async function addStanceTag(post, stance, cftParam) {
     const existingTag = post.querySelector('.fb-stance-tag');
@@ -100,6 +159,24 @@ async function addStanceTag(post, stance, cftParam) {
     tag.textContent = getStanceText(stance);
     tag.setAttribute('data-cft', cftParam);
     tag.setAttribute('data-stance', stance);
+
+    // Add click handler for re-selection
+    tag.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showStancePopup(post, cftParam, tag);
+    });
+
+    // Prevent event propagation
+    tag.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    tag.addEventListener('mouseup', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
 
     // Make sure post has position relative for absolute positioning
     if (window.getComputedStyle(post).position === 'static') {
@@ -191,37 +268,8 @@ function handlePosts() {
         addButton.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
-
-            // Remove any existing popups
-            const existingPopup = document.querySelector('.fb-stance-popup');
-            if (existingPopup) {
-                existingPopup.remove();
-            }
-
-            // Get stance statistics before creating popup
-            const stats = await getStanceStats(cftParam);
-
-            // Create and position new popup
-            const popup = createStancePopup(stats);
-            document.body.appendChild(popup);
-            positionPopup(popup, post);
-
-            // Handle stance selection
-            popup.addEventListener('click', (e) => {
-                if (e.target.classList.contains('fb-stance-button')) {
-                    const stance = e.target.dataset.stance;
-                    addStanceTag(post, stance, cftParam);
-                    popup.remove();
-                }
-            });
-
-            // Close popup when clicking outside
-            document.addEventListener('click', function closePopup(e) {
-                if (!popup.contains(e.target) && e.target !== addButton) {
-                    popup.remove();
-                    document.removeEventListener('click', closePopup);
-                }
-            });
+            const existingTag = post.querySelector('.fb-stance-tag');
+            showStancePopup(post, cftParam, existingTag);
         });
     });
 }
